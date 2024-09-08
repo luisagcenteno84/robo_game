@@ -1,42 +1,73 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const restartButton = document.getElementById('restartButton');
+
+// Load images
+const playerImg = new Image();
+playerImg.src = './player.png';
+const obstacleImg = new Image();
+obstacleImg.src = './obstacle.png';
+const coinImg = new Image();
+coinImg.src = './coin.png';
 
 const player = {
     x: 50,
     y: canvas.height - 50,
-    width: 40,
-    height: 40,
+    width: 50,  // Adjust based on your new image size
+    height: 50, // Adjust based on your new image size
     jumping: false,
-    jumpHeight: 100,
-    jumpSpeed: 5,
-    maxJumpHeight: 200  // New property for maximum jump height
+    jumpForce: 0,
+    maxJumpForce: 25,
+    minJumpForce: 15,
+    jumpChargeRate: 1.5,
+    gravity: 0.5
 };
 
 let obstacles = [];
 let coins = [];
 let score = 0;
 let gameOver = false;
-let spacePressed = false;  // New variable to track space bar state
+let spacePressed = false;
+let spaceHeldTime = 0;
+let gameSpeed = 5;
+let frameCount = 0;
+let lastObstacleTime = 0;
+const minObstacleInterval = 1500; // Minimum time between obstacles in milliseconds
+
+let gameState = 'start'; // Add this line to track game state: 'start', 'playing', or 'gameOver'
 
 function drawPlayer() {
-    ctx.fillStyle = 'blue';
-    ctx.fillRect(player.x, player.y, player.width, player.height);
+    if (playerImg.complete) {
+        ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+    } else {
+        ctx.fillStyle = 'blue';
+        ctx.fillRect(player.x, player.y, player.width, player.height);
+        console.log('Player image not loaded');
+    }
 }
 
 function drawObstacles() {
-    ctx.fillStyle = 'red';
     obstacles.forEach(obstacle => {
-        ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+        if (obstacleImg.complete) {
+            ctx.drawImage(obstacleImg, obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+        } else {
+            ctx.fillStyle = 'red';
+            ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+            console.log('Obstacle image not loaded');
+        }
     });
 }
 
 function drawCoins() {
-    ctx.fillStyle = 'gold';
     coins.forEach(coin => {
-        ctx.beginPath();
-        ctx.arc(coin.x, coin.y, coin.radius, 0, Math.PI * 2);
-        ctx.fill();
+        if (coinImg.complete) {
+            ctx.drawImage(coinImg, coin.x - coin.radius, coin.y - coin.radius, coin.radius * 2, coin.radius * 2);
+        } else {
+            ctx.fillStyle = 'gold';
+            ctx.beginPath();
+            ctx.arc(coin.x, coin.y, coin.radius, 0, Math.PI * 2);
+            ctx.fill();
+            console.log('Coin image not loaded');
+        }
     });
 }
 
@@ -49,13 +80,37 @@ function drawScore() {
 function updateGame() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (gameOver) {
+    if (gameState === 'start') {
+        // Display start screen
         ctx.fillStyle = 'black';
         ctx.font = '40px Arial';
-        ctx.fillText('Game Over', canvas.width / 2 - 100, canvas.height / 2);
+        ctx.textAlign = 'center';
+        ctx.fillText('Runner Game', canvas.width / 2, canvas.height / 2 - 40);
+        
+        ctx.font = '20px Arial';
+        ctx.fillText('Press Space Bar to Start', canvas.width / 2, canvas.height / 2 + 20);
+        
+        requestAnimationFrame(updateGame);
         return;
     }
 
+    if (gameState === 'gameOver') {
+        ctx.fillStyle = 'black';
+        ctx.font = '40px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2 - 40);
+        
+        ctx.font = '30px Arial';
+        ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 + 20);
+        
+        ctx.font = '20px Arial';
+        ctx.fillText('Press Space to Restart', canvas.width / 2, canvas.height / 2 + 60);
+        
+        requestAnimationFrame(updateGame);
+        return;
+    }
+
+    // Game playing state
     drawPlayer();
     drawObstacles();
     drawCoins();
@@ -63,12 +118,12 @@ function updateGame() {
 
     // Move obstacles
     obstacles.forEach(obstacle => {
-        obstacle.x -= 5;
+        obstacle.x -= gameSpeed;
     });
 
     // Move coins
     coins.forEach(coin => {
-        coin.x -= 5;
+        coin.x -= gameSpeed;
     });
 
     // Remove off-screen obstacles and coins
@@ -76,17 +131,19 @@ function updateGame() {
     coins = coins.filter(coin => coin.x + coin.radius > 0);
 
     // Add new obstacles
-    if (Math.random() < 0.02) {
+    const currentTime = Date.now();
+    if (currentTime - lastObstacleTime > minObstacleInterval && Math.random() < 0.02) {
         obstacles.push({
             x: canvas.width,
-            y: canvas.height - 50,
-            width: 30,
-            height: 50
+            y: canvas.height - 50 - Math.random() * 50,
+            width: 30 + Math.random() * 50,
+            height: 50 + Math.random() * 50
         });
+        lastObstacleTime = currentTime;
     }
 
     // Add new coins
-    if (Math.random() < 0.01) {
+    if (Math.random() < 0.05) {
         coins.push({
             x: canvas.width,
             y: Math.random() * (canvas.height - 100) + 50,
@@ -96,12 +153,22 @@ function updateGame() {
 
     // Handle jumping
     if (player.jumping) {
-        player.y -= player.jumpSpeed;
-        if (player.y <= canvas.height - player.height - player.jumpHeight) {
+        player.y -= player.jumpForce;
+        player.jumpForce -= player.gravity;
+        
+        if (player.y > canvas.height - player.height) {
+            player.y = canvas.height - player.height;
             player.jumping = false;
+            player.jumpForce = 0;
         }
-    } else if (player.y < canvas.height - player.height) {
-        player.y += player.jumpSpeed;
+    } else if (spacePressed && player.y === canvas.height - player.height) {
+        spaceHeldTime += 1/60; // Assuming 60 FPS
+        let chargedForce = player.minJumpForce + (player.jumpChargeRate * spaceHeldTime);
+        player.jumpForce = Math.min(chargedForce, player.maxJumpForce);
+    } else {
+        player.y = canvas.height - player.height;
+        player.jumpForce = 0;
+        spaceHeldTime = 0;
     }
 
     // Check for collisions
@@ -112,7 +179,7 @@ function updateGame() {
             player.y < obstacle.y + obstacle.height &&
             player.y + player.height > obstacle.y
         ) {
-            gameOver = true;
+            gameState = 'gameOver';
         }
     });
 
@@ -128,34 +195,55 @@ function updateGame() {
         }
     });
 
+    // Increase game speed over time
+    frameCount++;
+    if (frameCount % 600 === 0) { // Increase speed every 10 seconds (assuming 60 FPS)
+        gameSpeed += 0.5;
+    }
+
     requestAnimationFrame(updateGame);
 }
 
-function jump() {
-    if (!player.jumping && player.y === canvas.height - player.height) {
-        player.jumping = true;
-    }
-}
-
-function restartGame() {
+function startGame() {
+    gameState = 'playing';
     player.y = canvas.height - player.height;
     player.jumping = false;
     obstacles = [];
     coins = [];
     score = 0;
-    gameOver = false;
-    updateGame();
-    
-    // Remove focus from the restart button
-    restartButton.blur();
+    gameSpeed = 5;
+    frameCount = 0;
+    lastObstacleTime = 0;
 }
 
+// Modify the keydown event listener
 document.addEventListener('keydown', (event) => {
     if (event.code === 'Space') {
-        jump();
+        if (gameState === 'start' || gameState === 'gameOver') {
+            startGame();
+        } else if (gameState === 'playing') {
+            if (!spacePressed && player.y === canvas.height - player.height) {
+                spacePressed = true;
+                spaceHeldTime = 0;
+            }
+        }
+        event.preventDefault(); // Prevent spacebar from scrolling the page
     }
 });
 
-restartButton.addEventListener('click', restartGame);
+// Modify the keyup event listener
+document.addEventListener('keyup', (event) => {
+    if (event.code === 'Space') {
+        spacePressed = false;
+        if (gameState === 'playing' && !player.jumping && player.y === canvas.height - player.height) {
+            player.jumping = true;
+        }
+        event.preventDefault(); // Prevent spacebar from scrolling the page
+    }
+});
 
+// Remove the restart button event listener
+// restartButton.addEventListener('click', restartGame);
+
+// Start the game loop
 updateGame();
